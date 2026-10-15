@@ -231,25 +231,6 @@ export async function GET(req: NextRequest) {
         },
       },
     },
-    components: {
-      securitySchemes: {
-        OAuth2: {
-          type: 'oauth2',
-          description: 'RestoHub OAuth 2.0 Authorization Code flow for ChatGPT',
-          flows: {
-            authorizationCode: {
-              authorizationUrl: `${origin}/oauth/authorize`,
-              tokenUrl: `${origin}/api/oauth/token`,
-              scopes: {
-                read: 'Read tables, menus, and orders',
-                write: 'Create orders, assign kitchens, and generate bills',
-              },
-            },
-          },
-        },
-      },
-    },
-    security: [{ OAuth2: ['read', 'write'] }],
   };
 
   return NextResponse.json(spec, {
