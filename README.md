@@ -129,20 +129,33 @@ ChatGPT will call these tools in sequence:
 
 ## Connecting to ChatGPT (Custom GPT)
 
-1. Deploy the app (Vercel recommended):
+1. Deploy the app (Vercel):
    ```bash
    vercel --prod
    ```
-2. Go to ChatGPT → **Explore GPTs → Create a GPT**
-3. In the **Actions** tab, add a new action:
-   - **Schema URL**: `https://your-domain.com/mcp` (GET returns server info)
-   - **Authentication**: None (add bearer token for production)
-4. In the GPT instructions, add:
+2. Go to ChatGPT → **Explore GPTs → Create a GPT → Configure → Actions → Create new action**
+3. Configure the Action:
+   - **Authentication**: Select **None** *(Do not choose OAuth; OAuth will show discovery error)*
+   - **Schema**: Click **Import from URL** and enter:
+     ```
+     https://your-vercel-domain.vercel.app/api/openapi.json
+     ```
+     *(Or paste the raw JSON from `/api/openapi.json`)*
+4. In the GPT **Instructions**, add:
    ```
-   You are a restaurant ordering assistant for RestoHub.
-   Use the MCP tools to help staff create orders, manage tables, and generate bills.
-   Always confirm before submitting orders.
+   You are an AI restaurant ordering assistant for RestoHub.
+   Use the available actions to help staff check tables, browse the menu, create orders, apply discounts, assign kitchens, and generate bills.
+   Always confirm the details with the staff before submitting orders.
    ```
+
+---
+
+## Connecting via MCP (Claude Desktop / Cursor / Remote MCP)
+
+For MCP clients that support HTTP / SSE (like Claude Desktop with `mcp-remote`, Cursor, or Windsurf):
+- **Server URL**: `https://your-vercel-domain.vercel.app/mcp`
+- **Transport**: `streamable-http` (SSE)
+- **Auth**: None
 
 ---
 
