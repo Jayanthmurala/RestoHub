@@ -11,6 +11,7 @@ import {
 } from '@/lib/services/orders';
 import { generateBill, getBill, createPDFBuffer } from '@/lib/services/bills';
 import { verifyAccessToken } from '@/lib/oauth';
+import { getOpenApiSpec } from '@/lib/openapi-spec';
 
 function buildServer(userId = 1) {
   const server = new McpServer({
@@ -277,28 +278,35 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Info endpoint
-  return NextResponse.json({
-    name: 'RestoHub MCP Server',
-    version: '1.0.0',
-    transport: 'streamable-http (web standard)',
-    endpoint: '/mcp',
-    tools: [
-      'get_tables', 'get_menu', 'get_kitchens',
-      'create_order', 'add_items', 'apply_discount',
-      'assign_kitchen', 'submit_order', 'get_order_status',
-      'update_order_status', 'get_order_history', 'generate_bill',
-    ],
-    setup: {
-      chatgpt_custom_gpt: 'Add /mcp as an Action with schema from GET /mcp',
-      claude_desktop: 'Use mcp-remote proxy pointing to /mcp',
+  // If ChatGPT Custom GPT imports /mcp as Schema URL, return OpenAPI specification directly!
+  const host = req.headers.get('host') ?? 'resto-hub-nine.vercel.app';
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https';
+  const origin = `${proto}://${host}`;
+
+  return NextResponse.json(getOpenApiSpec(origin), {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
+      'Access-Control-Allow-Headers': '*',
+    },
+  });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, DELETE',
+      'Access-Control-Allow-Headers': '*',
     },
   });
 }
 
 export async function DELETE(req: NextRequest) {
   try {
-    const server = buildServer();
+    const userId = getUserIdFromReq(req);
+    const server = buildServer(userId);
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     await server.connect(transport);
     return transport.handleRequest(req);
@@ -306,3 +314,4 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
+
