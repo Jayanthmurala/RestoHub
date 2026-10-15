@@ -1,6 +1,4 @@
 import PDFDocument from 'pdfkit';
-import { join } from 'path';
-import { mkdirSync, existsSync } from 'fs';
 import { query, queryOne } from '@/lib/db';
 import { getOrder } from './orders';
 
@@ -21,75 +19,24 @@ function formatINR(amount: number): string {
   return `Rs. ${Number(amount).toFixed(2)}`;
 }
 
-export async function generateBill(orderId: number): Promise<Bill> {
-  const order = await getOrder(orderId);
+export async function createPDFBuffer(order: Awaited<ReturnType<typeof getOrder>>): Promise<Buffer> {
   if (!order) throw new Error('Order not found');
-  if (!['submitted', 'preparing', 'ready', 'paid'].includes(order.status)) {
-    throw new Error('Order must be submitted before generating a bill');
-  }
 
-  // Check if bill already exists
-  const existing = await queryOne<Bill>(
-    `SELECT b.*, o.order_number, t.name as table_name 
-     FROM bills b 
-     JOIN orders o ON o.id = b.order_id 
-     JOIN tables t ON t.id = o.table_id 
-     WHERE b.order_id = $1`, [orderId]
-  );
-
-  // Generate PDF
-  const billsDir = join(process.cwd(), 'public', 'bills');
-  if (!existsSync(billsDir)) mkdirSync(billsDir, { recursive: true });
-
-  const fileName = `bill-${order.order_number}.pdf`;
-  const filePath = join(billsDir, fileName);
-  const publicPath = `/bills/${fileName}`;
-
-  await createPDF(order, filePath);
-
-  if (existing) {
-    await query(`UPDATE bills SET pdf_path = $2, created_at = NOW() WHERE id = $1`, [existing.id, publicPath]);
-    return { ...existing, pdf_path: publicPath };
-  }
-
-  const row = await queryOne<{ id: number }>(`
-    INSERT INTO bills (order_id, subtotal, discount_amount, total, pdf_path)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING id
-  `, [orderId, order.subtotal, order.discount_amount, order.total, publicPath]);
-
-  return {
-    id: row!.id,
-    order_id: orderId,
-    order_number: order.order_number,
-    table_name: order.table_name,
-    subtotal: order.subtotal,
-    discount_pct: order.discount_pct,
-    discount_amount: order.discount_amount,
-    total: order.total,
-    pdf_path: publicPath,
-    created_at: new Date().toISOString(),
-  };
-}
-
-export async function getBill(orderId: number): Promise<Bill | null> {
-  return queryOne<Bill>(`
-    SELECT b.*, o.order_number, o.discount_pct, t.name as table_name
-    FROM bills b
-    JOIN orders o ON o.id = b.order_id
-    JOIN tables t ON t.id = o.table_id
-    WHERE b.order_id = $1
-  `, [orderId]);
-}
-
-async function createPDF(order: Awaited<ReturnType<typeof getOrder>>, filePath: string): Promise<void> {
-  if (!order) throw new Error('Order not found');
-  
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 50, size: 'A5' });
-    const { createWriteStream } = require('fs');
-    const stream = createWriteStream(filePath);
-    doc.pipe(stream);
+    const chunks: Buffer[] = [];
+
+    doc.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    doc.on('end', () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    doc.on('error', (err) => {
+      reject(err);
+    });
 
     // Header
     doc.font('Helvetica-Bold').fontSize(20).text('RESTOHUB', { align: 'center' });
@@ -148,7 +95,6 @@ async function createPDF(order: Awaited<ReturnType<typeof getOrder>>, filePath: 
     // Totals
     const totalsX = 200;
     const valX = 310;
-    const rowH = 16;
 
     const sY = doc.y;
     doc.font('Helvetica').text('Subtotal:', totalsX, sY).text(formatINR(order.subtotal), valX, sY, { width: 60, align: 'right' });
@@ -169,7 +115,59 @@ async function createPDF(order: Awaited<ReturnType<typeof getOrder>>, filePath: 
     doc.text('Please visit us again.', { align: 'center' });
 
     doc.end();
-    stream.on('finish', resolve);
-    stream.on('error', reject);
   });
+}
+
+export async function generateBill(orderId: number): Promise<Bill> {
+  const order = await getOrder(orderId);
+  if (!order) throw new Error('Order not found');
+  if (!['submitted', 'preparing', 'ready', 'paid'].includes(order.status)) {
+    throw new Error('Order must be submitted before generating a bill');
+  }
+
+  // Check if bill already exists
+  const existing = await queryOne<Bill>(
+    `SELECT b.*, o.order_number, t.name as table_name 
+     FROM bills b 
+     JOIN orders o ON o.id = b.order_id 
+     JOIN tables t ON t.id = o.table_id 
+     WHERE b.order_id = $1`, [orderId]
+  );
+
+  // Dynamic route that streams the PDF in memory (serverless friendly)
+  const publicPath = `/api/bills/${orderId}?view=true`;
+
+  if (existing) {
+    await query(`UPDATE bills SET pdf_path = $2, created_at = NOW() WHERE id = $1`, [existing.id, publicPath]);
+    return { ...existing, pdf_path: publicPath };
+  }
+
+  const row = await queryOne<{ id: number }>(`
+    INSERT INTO bills (order_id, subtotal, discount_amount, total, pdf_path)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id
+  `, [orderId, order.subtotal, order.discount_amount, order.total, publicPath]);
+
+  return {
+    id: row!.id,
+    order_id: orderId,
+    order_number: order.order_number,
+    table_name: order.table_name,
+    subtotal: order.subtotal,
+    discount_pct: order.discount_pct,
+    discount_amount: order.discount_amount,
+    total: order.total,
+    pdf_path: publicPath,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export async function getBill(orderId: number): Promise<Bill | null> {
+  return queryOne<Bill>(`
+    SELECT b.*, o.order_number, o.discount_pct, t.name as table_name
+    FROM bills b
+    JOIN orders o ON o.id = b.order_id
+    JOIN tables t ON t.id = o.table_id
+    WHERE b.order_id = $1
+  `, [orderId]);
 }

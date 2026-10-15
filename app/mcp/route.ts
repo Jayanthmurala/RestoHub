@@ -9,9 +9,7 @@ import {
   getOrders, getOrder, createOrder, setOrderItems,
   applyDiscount, assignKitchen, submitOrder, updateOrderStatus,
 } from '@/lib/services/orders';
-import { generateBill, getBill } from '@/lib/services/bills';
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { generateBill, getBill, createPDFBuffer } from '@/lib/services/bills';
 
 // Default user ID for MCP operations (matches seeded "Arjun Kumar" waiter)
 const MCP_USER_ID = 1;
@@ -217,10 +215,10 @@ function buildServer() {
       };
 
       // Attach PDF as resource blob for clients that support it
-      const filePath = join(process.cwd(), 'public', bill.pdf_path);
-      if (existsSync(filePath)) {
-        try {
-          const pdfBuffer = readFileSync(filePath);
+      try {
+        const order = await getOrder(order_id);
+        if (order) {
+          const pdfBuffer = await createPDFBuffer(order);
           (parts.content as unknown[]).push({
             type: 'resource',
             resource: {
@@ -229,8 +227,8 @@ function buildServer() {
               blob: pdfBuffer.toString('base64'),
             },
           });
-        } catch { /* skip if read fails */ }
-      }
+        }
+      } catch { /* skip if buffer creation fails */ }
 
       return parts;
     }
