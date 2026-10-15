@@ -1,10 +1,14 @@
-import { config } from 'dotenv';
 import { join } from 'path';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
-config({ path: join(process.cwd(), '.env.local') });
+const envPath = join(process.cwd(), '.env.local');
+if (existsSync(envPath) && typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile(envPath);
+  } catch {}
+}
 
 const NEON_URL =
   process.env.DATABASE_URL ??

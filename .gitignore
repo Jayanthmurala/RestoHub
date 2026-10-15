@@ -2,6 +2,7 @@
 .next/
 out/
 build/
+*.tsbuildinfo
 
 # Node
 node_modules/
