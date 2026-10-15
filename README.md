@@ -1,36 +1,199 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RestoHub — Restaurant Management Demo
 
-## Getting Started
+A full-stack restaurant POS demo showing how **REST APIs** and **MCP (Model Context Protocol)** can drive the same backend.
 
-First, run the development server:
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router) + TypeScript |
+| Styling | Tailwind CSS v4 + Vanilla CSS |
+| Database | PostgreSQL (Neon cloud) |
+| Auth | NextAuth.js (JWT sessions) |
+| PDF | PDFKit |
+| MCP | `@modelcontextprotocol/sdk` v1.32 |
+
+---
+
+## Quick Start
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Seed the database
+
+The Neon database credentials are already configured. Run:
+
+```bash
+npm run seed
+```
+
+This creates:
+- **12 tables** (T1–T12)
+- **3 kitchens** (Main Kitchen, Chinese Kitchen, Fast Food)
+- **40 menu items** across 7 categories
+- **4 demo users**
+
+### 3. Start the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Login Credentials
 
-## Learn More
+| Email | Password | Role |
+|-------|----------|------|
+| `jayanthmurala@gmail.com` | `123456789` | Manager |
+| `waiter@demo.com` | `waiter123` | Waiter |
+| `manager@demo.com` | `manager123` | Manager |
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## REST API Reference
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+All endpoints require authentication (session cookie from login).
 
-## Deploy on Vercel
+### Tables
+- `GET /api/tables` — List all tables with status
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Menu
+- `GET /api/menu` — List all menu items
+- `GET /api/menu?grouped=true` — Grouped by category
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Kitchens
+- `GET /api/kitchens` — List all kitchens
+
+### Orders
+- `GET /api/orders` — List recent orders
+- `POST /api/orders` — Create order `{ table_id }`
+- `GET /api/orders/:id` — Get order details
+- `PATCH /api/orders/:id` — Update order (action-based):
+  - `{ action: "set_items", items: [{menu_item_id, quantity}] }`
+  - `{ action: "apply_discount", discount_pct: 10 }`
+  - `{ action: "assign_kitchen", kitchen_id: 2 }`
+  - `{ action: "update_notes", notes: "..." }`
+  - `{ action: "submit" }`
+  - `{ action: "update_status", status: "preparing"|"ready"|"paid"|"cancelled" }`
+
+### Bills
+- `GET /api/bills/:orderId` — Get bill details
+- `GET /api/bills/:orderId?download=true` — Download PDF
+- `POST /api/bills/:orderId` — Generate PDF bill
+
+---
+
+## MCP Server
+
+The MCP endpoint is at `/mcp`. It uses the **Streamable HTTP** transport (Web Standards).
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_tables` | List all tables with status |
+| `get_menu` | Full menu grouped by category |
+| `get_kitchens` | List all kitchens |
+| `create_order(table_id)` | Create a draft order |
+| `add_items(order_id, items[])` | Add items to order |
+| `apply_discount(order_id, pct)` | Apply % discount |
+| `assign_kitchen(order_id, kitchen_id)` | Assign kitchen |
+| `submit_order(order_id)` | Send to kitchen |
+| `get_order_status(order_id)` | Get order details |
+| `update_order_status(order_id, status)` | Advance status |
+| `get_order_history(limit)` | Recent orders |
+| `generate_bill(order_id)` | Generate PDF bill |
+
+### Example MCP instruction (for ChatGPT)
+
+> "Add 2 biryanis and 1 Coke to Table 4, apply a 5% discount, assign Kitchen 2, submit the order, and generate the PDF bill."
+
+ChatGPT will call these tools in sequence:
+1. `get_tables()` → find Table 4 ID
+2. `get_menu()` → find Chicken Biryani and Coke IDs
+3. `create_order({ table_id: 4 })`
+4. `add_items({ order_id, items: [{id:5, qty:2}, {id:32, qty:1}] })`
+5. `apply_discount({ order_id, discount_pct: 5 })`
+6. `assign_kitchen({ order_id, kitchen_id: 2 })`
+7. `submit_order({ order_id })`
+8. `generate_bill({ order_id })` → returns PDF blob
+
+---
+
+## Connecting to ChatGPT (Custom GPT)
+
+1. Deploy the app (Vercel recommended):
+   ```bash
+   vercel --prod
+   ```
+2. Go to ChatGPT → **Explore GPTs → Create a GPT**
+3. In the **Actions** tab, add a new action:
+   - **Schema URL**: `https://your-domain.com/mcp` (GET returns server info)
+   - **Authentication**: None (add bearer token for production)
+4. In the GPT instructions, add:
+   ```
+   You are a restaurant ordering assistant for RestoHub.
+   Use the MCP tools to help staff create orders, manage tables, and generate bills.
+   Always confirm before submitting orders.
+   ```
+
+---
+
+## Workflow Comparison
+
+### Traditional (REST + UI) — 7 steps
+1. Login → Select Table → Add Items → Apply Discount → Select Kitchen → Submit → Generate Bill
+
+### MCP (ChatGPT) — 1 instruction
+> "Add 2 biryanis and 1 Coke to Table 4, apply 5% discount, assign Kitchen 2, submit, generate bill"
+
+Both produce identical results in the database. Changes from MCP appear in the dashboard immediately.
+
+---
+
+## Project Structure
+
+```
+app/
+  api/            ← REST API Route Handlers
+    auth/         ← NextAuth
+    tables/       ← GET /api/tables
+    menu/         ← GET /api/menu
+    orders/       ← CRUD /api/orders
+    bills/        ← PDF /api/bills
+    kitchens/     ← GET /api/kitchens
+  mcp/            ← MCP Server at /mcp
+  (dashboard)/    ← Protected UI pages
+    page.tsx      ← Dashboard
+    tables/       ← Table grid
+    orders/       ← Order list + detail editor
+    kitchen/      ← Kitchen Kanban view
+    menu/         ← Menu browser
+    reports/      ← Revenue reports
+  login/          ← Login page
+
+lib/
+  db.ts           ← PostgreSQL pool (Neon)
+  auth.ts         ← NextAuth config
+  api-helpers.ts  ← Auth middleware
+  services/
+    tables.ts
+    menu.ts
+    orders.ts
+    kitchens.ts
+    bills.ts      ← PDF generation
+
+scripts/
+  schema.sql      ← Database schema
+  seed.ts         ← Seed data
+
+public/
+  bills/          ← Generated PDF files
+```

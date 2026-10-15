@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // Server-only packages that must not be bundled into client code
+  serverExternalPackages: ['pg', 'bcryptjs', 'pdfkit'],
+
   turbopack: {
     rules: {
       "*.css": {
