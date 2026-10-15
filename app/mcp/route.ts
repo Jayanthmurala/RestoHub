@@ -10,11 +10,9 @@ import {
   applyDiscount, assignKitchen, submitOrder, updateOrderStatus,
 } from '@/lib/services/orders';
 import { generateBill, getBill, createPDFBuffer } from '@/lib/services/bills';
+import { verifyAccessToken } from '@/lib/oauth';
 
-// Default user ID for MCP operations (matches seeded "Arjun Kumar" waiter)
-const MCP_USER_ID = 1;
-
-function buildServer() {
+function buildServer(userId = 1) {
   const server = new McpServer({
     name: 'restohub-mcp',
     version: '1.0.0',
@@ -49,7 +47,7 @@ function buildServer() {
     'Create a new draft order for a table. Returns order ID and order number.',
     { table_id: z.number().int().positive().describe('Table ID (e.g. 4 for Table T4)') },
     async ({ table_id }) => {
-      const order = await createOrder(table_id, MCP_USER_ID);
+      const order = await createOrder(table_id, userId);
       return {
         content: [{
           type: 'text',
@@ -237,10 +235,20 @@ function buildServer() {
   return server;
 }
 
+function getUserIdFromReq(req: NextRequest): number {
+  const auth = req.headers.get('authorization') ?? '';
+  if (auth.startsWith('Bearer ')) {
+    const verified = verifyAccessToken(auth.slice(7).trim());
+    if (verified) return verified.id;
+  }
+  return 1;
+}
+
 // ── Next.js Route Handler ─────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const server = buildServer();
+    const userId = getUserIdFromReq(req);
+    const server = buildServer(userId);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless mode
     });
@@ -257,7 +265,8 @@ export async function GET(req: NextRequest) {
   const accept = req.headers.get('accept') ?? '';
   if (accept.includes('text/event-stream')) {
     try {
-      const server = buildServer();
+      const userId = getUserIdFromReq(req);
+      const server = buildServer(userId);
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });

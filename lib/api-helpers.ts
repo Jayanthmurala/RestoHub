@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { verifyAccessToken } from '@/lib/oauth';
 
 export async function requireAuth(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -8,13 +9,31 @@ export async function requireAuth(req: NextRequest) {
     return { error: null, session };
   }
 
-  // Support ChatGPT Custom GPT Actions, API clients, and curl
+  // 1. Check OAuth 2.0 Bearer token
   const authHeader = req.headers.get('authorization') ?? '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    const verified = verifyAccessToken(token);
+    if (verified) {
+      return {
+        error: null,
+        session: {
+          user: {
+            id: verified.id,
+            name: verified.name,
+            email: verified.email,
+            role: verified.role,
+          },
+        },
+      };
+    }
+  }
+
+  // 2. Support API keys and demo agents
   const apiKey = req.headers.get('x-api-key') ?? '';
   const userAgent = req.headers.get('user-agent') ?? '';
   const isAgent = Boolean(
     apiKey ||
-    authHeader ||
     userAgent.includes('ChatGPT') ||
     req.nextUrl.searchParams.has('demo')
   );
